@@ -101,18 +101,28 @@ crate.
 
 ### 2. There is no way to ask what a route will cost — now drafted
 
-Step 6 has no method behind it. Bob must price the route to Alice's BTC
-node *before* issuing his quote — that is the whole reason a quotation
-exists rather than only an offer — and nothing in NNC or NWC answers
-"what would it cost to reach this destination, and what CLTV would it
-consume".
+Step 6 has no method behind it *in the crate*. Bob must price the route to
+Alice's BTC node **before** issuing his quote — that is the whole reason a
+quotation exists rather than only an offer.
 
-`get_network_channel` is a graph lookup, not a route computation.
+**Corrected.** This first read "nothing in NNC or NWC answers" the
+question. That holds for published NWC, and for `nostr-ln`, but not for
+what we were running: our forked `47.md` defines `estimate_routing_fees`
+and `dln-node` implements it. What is wrong with it is its **shape** — it
+takes a destination pubkey and an amount, and a pubkey carries no route
+hints, so it cannot reach a payee behind a private channel and may quote a
+route the real payment does not take.
+
+`get_network_channel` is a graph lookup, not a route computation, and
+NNC's `query_routes` has the same pubkey-shaped problem.
 
 Without it Bob can only guess, or attempt the payment to find out — and
 attempting it is precisely what he must not do before being paid.
 
-**Drafted as `quote_payment` in `nips/nwc-route.md`.** It belongs in NWC:
+**Drafted as `quote_payment` in `nips/nwc-route.md`**, which takes the
+invoice and therefore its route hints, and which a consumer should adopt
+**in place of** `estimate_routing_fees` rather than alongside it. It
+belongs in NWC:
 a client about to spend should be able to say what it will cost. And it
 adds nothing to Lightning — every implementation already computes this
 locally from gossip, so the method only exposes something the wallet
