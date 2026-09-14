@@ -1,7 +1,7 @@
 # dln-x-demo
 
-A demonstration of paying across two chains through a single Lightning
-route, where only the middle node knows it happened.
+A demonstration of paying across two chains, where only the middle node
+knows it happened.
 
 ```
    Alice ────── XBT channel ──────> Bob ────── BTC channel ──────> Clair
