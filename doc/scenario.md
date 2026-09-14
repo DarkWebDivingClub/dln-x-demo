@@ -7,11 +7,20 @@ Bob does.
 
 ```
    Alice ────── XBT channel ──────> Bob ────── BTC channel ──────> Clair
-  holds XBT                   holds both                       wants BTC
+  holds XBT                    holds BTC                       wants BTC
 ```
 
 Bob has a channel to Alice denominated in XBT and a channel to Clair
 denominated in BTC. **He is the exchange.**
+
+Note what Bob does *not* need: **any XBT.** He pays Clair out of his own
+BTC, so he must hold that. But he is *paid* by Alice, and being paid needs
+inbound capacity rather than a balance — which Alice supplied when she
+funded her channel to him. Her whole balance sits on her side, and that
+is Bob's inbound.
+
+So Bob's capital is one-sided. He can start as an XBT-for-BTC maker
+holding nothing but BTC.
 
 ---
 
@@ -235,6 +244,12 @@ knowing why this is not simply either of them.
    to the destination at quotation time, which is the first thing here
    that is real work rather than message passing.
 
-3. **One Bob is a demo.** Several makers quoting different prices is a
+3. **Bob's position depletes and is one-directional.** Every trade moves
+   BTC out and accumulates XBT on his side of Alice's channel. Eventually
+   he has no BTC left to sell and a pile of XBT he did not set out to
+   hold. Restoring it needs flow the other way, or a trade made somewhere
+   else, and nothing here describes either.
+
+4. **One Bob is a demo.** Several makers quoting different prices is a
    market, and needs discovery, comparison and failure handling that none
    of this describes.
