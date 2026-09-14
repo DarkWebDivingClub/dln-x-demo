@@ -1,47 +1,58 @@
 # The scenario: paying across chains without anyone noticing
 
 Alice holds XBT. Clair wants BTC. They have never met, share no channel,
-and neither runs anything unusual.
+and Clair runs nothing unusual.
 
 Bob does.
 
 ```
    Alice ────── XBT channel ──────> Bob ────── BTC channel ──────> Clair
-  holds XBT                   bridges both                    wants BTC
+  holds XBT                   holds both                       wants BTC
 ```
 
 Bob has a channel to Alice denominated in XBT and a channel to Clair
-denominated in BTC. **He is the exchange, and the exchange happens as a
-routing hop.**
+denominated in BTC. **He is the exchange.**
+
+---
+
+## Before anything happens
+
+Both channels are already open. Opening one is an on-chain transaction
+taking minutes to an hour, and nothing in a priced negotiation should
+wait on a confirmation. The trade itself is entirely off-chain and takes
+seconds.
+
+Bob is **two nodes**, not one. A Lightning node is built for a single
+chain and cannot hold channels on two, so Bob runs one node on XBT and
+one on BTC, with two node IDs and nothing relating them but Bob.
 
 ---
 
 ## The flow
 
-1. **Clair writes an ordinary BTC invoice.** She generates a secret `S`,
-   computes `H = SHA256(S)`, and asks for *X* msat. This is a completely
-   normal Lightning invoice. She is running stock software and has no
-   idea anything unusual is about to happen.
+**1. Bob publishes an offer.** The pair, an indicative price, the volume
+he can serve. Public, standing, and binding on nobody — it is a price to
+compare, not a price to trade at.
 
-2. **Alice gets the invoice** and wants to pay it, but holds no BTC.
+**2. Clair issues an ordinary invoice** to Alice for the BTC she is owed,
+carrying payment hash `H = SHA256(S)`. She generated `S`; nobody else has
+it. This happens outside the protocol, by whatever means they already
+use.
 
-3. **Alice needs a rate.** How much XBT buys *X* BTC? Bob quotes it —
-   rate *R*, valid until some time, up to some capacity.
+**3. Alice sends Bob a request for quotation** carrying Clair's invoice.
 
-4. **Alice offers an HTLC to Bob on the XBT channel**: amount
-   *Y = X × R*, locked to `H`, expiring at `T_alice`.
+**4. Bob quotes.** He can now see exactly what is being asked: the
+destination, the amount, and therefore his own routing cost to reach her.
+He replies with a **hold invoice** for the XBT he wants, carrying **the
+same `H` as Clair's invoice**.
 
-5. **Bob offers an HTLC to Clair on the BTC channel**: amount *X*, locked
-   to **the same `H`**, expiring at `T_clair`, where
-   `T_clair < T_alice − Δ`.
+**5. Alice pays Bob's invoice. Paying is accepting.** It *holds* — Bob
+cannot settle it, because settling needs `S` and he does not have it.
 
-6. **Clair settles**, revealing `S` and taking her *X* BTC. From her side
-   the payment simply arrived.
+**6. Bob pays Clair's invoice.** Hers is an ordinary invoice, so her node
+settles on receipt — and `S` comes back to Bob as his payment completes.
 
-7. **Bob learns `S`** — it comes back down his outgoing HTLC, exactly as
-   it would on any forwarded payment.
-
-8. **Bob settles Alice's HTLC** with `S`, taking *Y* XBT.
+**7. Bob settles Alice's held invoice with `S`.**
 
 Alice paid XBT. Clair received BTC. The two assets never met except
 inside Bob.
@@ -50,130 +61,147 @@ inside Bob.
 
 ## Why it is atomic
 
-There is **one secret and one hash** for the whole path. That is the
-entire trick, and it is not new — it is how every multi-hop Lightning
-payment already works. The only unusual thing is that the two hops are
-denominated in different assets.
+**One hash, two invoices.** Alice's funds are held against a hash whose
+preimage does not exist in the open. Bob can only claim them by producing
+`S`, and `S` only leaves Clair when she is paid.
+
+> **Alice's money moves if and only if Clair was paid.** Whatever the
+> amounts, whoever Bob is.
 
 | If | Then |
 |---|---|
-| Clair never settles | Both HTLCs expire. Everyone refunded |
-| Bob never forwards | Alice's HTLC expires. Alice refunded, Clair never knew |
-| Bob forwards but cannot claim | Impossible while `T_alice > T_clair + Δ` — he learns `S` the moment Clair takes his money |
-| The relay carrying the rate quote dies | Irrelevant. Settlement is on Lightning |
+| Bob never quotes | Nothing has moved |
+| Alice never pays | Nothing has moved |
+| Bob never pays Clair | Alice's payment expires and refunds. **No loss; liquidity locked until timeout** |
+| Clair never settles | Both legs expire. Everyone refunded |
+| Bob pays Clair but cannot claim from Alice | **Bob loses.** Prevented by the timelock |
 
-Bob's safety is the ordinary forwarding condition: **his incoming HTLC
-must outlive his outgoing one.** That is `cltv_expiry_delta`, which every
-routing node already enforces. Nothing new is required to make this safe.
+### The order of payment is not symmetric
+
+**Alice pays first. Always.**
+
+The two invoices differ in kind, and that difference is the mechanism:
+
+| Leg | Invoice | Behaviour |
+|---|---|---|
+| Alice → Bob | **hold** | stays pending; Bob cannot settle without `S` |
+| Bob → Clair | **ordinary** | Clair settles on receipt, which is what publishes `S` |
+
+If Bob paid Clair first he would be ruined: she settles on receipt, so he
+would have handed over the money and learned `S` while Alice is committed
+to nothing — with no step compelling her to pay, and no held HTLC for `S`
+to unlock.
+
+### The timelock, and who it protects
+
+Bob's exposure is the window between paying Clair and settling with
+Alice. He does not hope it is long enough — **he sets it**, through the
+final CLTV in the invoice he issues:
+
+1. Clair's invoice arrived in the request for quotation.
+2. So Bob can find his route to her and total its CLTV delta **before
+   issuing anything**.
+3. He sets his own invoice's final CLTV above that, plus a margin.
+
+Whatever route Alice takes only *adds* delta on top of that floor.
+
+Note who this protects. **Alice is safe regardless** — her funds cannot
+move unless Bob holds `S`. Bob is the one who loses by getting it wrong.
 
 ---
 
-## Why this is better than a bilateral swap
+## Why the secret belongs to Clair
 
-The obvious alternative is for Alice and Bob to swap directly: two
-invoices, two payments, both locked to one hash, each party settling
-their own leg. That construction works, and it is what
-[NIP-XZ](../../nips/XZ.md) originally described. This is better in three
-ways.
+This is the design's real advantage.
 
-**Nobody holds a free option.** In a bilateral swap the party who knows
-the secret decides whether to settle *after* seeing both legs held. They
-settle if the trade still suits them and walk away if it does not, and
-the counterparty's funds are locked until timeout either way. Here the
-secret holder is Clair — **the party being paid** — and she has every
-reason to settle. The option evaporates because the secret is held by
-someone with nothing to gain from stalling.
+In a two-party swap, one of the traders knows the secret and therefore
+chooses whether to complete *after* seeing both legs locked. They settle
+if the price still suits them and walk away if it does not, with the
+counterparty's funds locked until timeout either way. That is a free
+option, written by whoever generated the secret.
 
-**No special timelock rule.** A bilateral swap needs the exposed party's
-incoming leg to outlive their outgoing leg by a margin, and getting that
-backwards loses money. Here it is just `cltv_expiry_delta` at Bob's hop —
-the same discipline, already implemented, already understood.
+Here the secret is generated by **Clair, who is being paid**. She is not
+a party to the trade, has no interest in the price, and settles because
+settling is how she receives her money. **Neither trader can stall for
+advantage, because neither trader holds the secret.**
 
-**Clair is unmodified.** She writes an invoice and gets paid. She does
-not implement a swap protocol, does not negotiate, does not need to know
-XBT exists. A protocol that requires both ends to adopt it is a protocol
-that needs a network before it is useful; this one needs only Bob.
+And Clair implements nothing. She issues an invoice and is paid, and need
+not know that Nostr, Alice, or a second asset were involved.
 
 ---
 
-## What has to be built
+## Why an offer and a quotation, rather than just a price
 
-The atomicity is free. The work is everywhere else.
+An offer is published before Bob knows who will take it or where the
+money is going. It cannot price the trade, because the cost of reaching a
+destination is unknown until the destination is.
 
-### 1. Bob's node must forward across a denomination boundary
+The quotation is where that cost lands. Bob has Clair's invoice, can find
+the route, and quotes a price reflecting it.
 
-This is the hard part, and it is not a Nostr problem.
+**An offer is indicative; a quotation is firm.** Without the split, Bob
+would have to advertise an average and absorb every trade worse than it —
+a tax on takers who are cheap to reach, paid to subsidise the ones who
+are not.
 
-In BOLT forwarding, the onion tells Bob `amt_to_forward`, and Bob checks
-that his incoming HTLC covers it plus his fee. With XBT coming in and BTC
-going out, **incoming and outgoing amounts are in different units.** A
-stock LND or LDK node compares them, finds the forward underpaid, and
-fails the HTLC.
-
-So Bob's node must:
-
-- know that its two channels are denominated differently
-- apply a **rate** rather than a proportional fee
-- decide whether an incoming amount is sufficient *after conversion*
-
-That is a change at the HTLC layer of the node, which is why this demo
-lives against `dln-node` rather than stock implementations.
-
-### 2. Alice must be able to learn the rate before she pays
-
-She constructs the payment, so she needs the number first. A rate quote
-needs:
-
-| Field | Why |
-|---|---|
-| pair | which two assets |
-| rate | how much of one buys the other |
-| capacity | above which Bob will not quote |
-| expiry | after which the quote is void |
-
-Bob carries the price risk between quoting and settling. A short expiry
-protects him; too short and payments fail in flight.
-
-### 3. Somewhere to publish the quote
-
-This is the part Nostr is for, and the only part of the scenario that
-touches it. It is also the smallest part.
-
-> **Note the proportions.** Of the three things to build, Nostr carries
-> one, and it is the easy one. The scenario is mostly a Lightning node
-> change, and any specification that presents it as a messaging protocol
-> has described the wrong half.
+There is no separate acceptance message. Paying the quoted invoice is
+acceptance by performance, and a taker who accepted without paying would
+leave Bob exactly where an unanswered quote does.
 
 ---
 
 ## What each party knows
 
-Worth stating, because it is the measure of how good the construction is.
-
 | | Knows about the other chain | Runs special software |
 |---|---|---|
 | **Clair** | nothing | no |
-| **Alice** | that Bob quotes a rate | pathfinding must accept a cross-asset hop |
+| **Alice** | that Bob quotes a price | no — she pays an invoice |
 | **Bob** | everything | yes — this is the whole job |
 
-Bob is the only party carrying complexity, and he is the party being paid
-to carry it. That is the correct place for it to sit.
+Bob carries all the complexity, and Bob is the party being paid to carry
+it. That is the right place for it.
+
+---
+
+## What has to be built
+
+The atomicity is free — it is the same hash lock Lightning already uses,
+and **no change to any node's forwarding logic is required.** Both legs
+are ordinary payments within their own chain. This is the construction's
+main practical advantage over routing the payment through Bob: there is
+no onion carrying asset-typed amounts, and no denomination boundary for
+anything to forward across.
+
+What remains:
+
+| | Where |
+|---|---|
+| The three messages, over Nostr | `NIP-XZ`, and a client |
+| A hold invoice on the XBT side | `dln-node` — it must issue one and settle it later with an observed preimage |
+| Quoting: route to the destination, price it, set the final CLTV | Bob's side, and the only interesting logic |
+| Two nodes per maker, one per chain | deployment |
+
+> **Note the proportion.** Nostr carries the negotiation, which is three
+> small messages. The substance is a node that can issue a hold invoice,
+> price a route, and settle on a preimage it observed rather than one it
+> generated.
 
 ---
 
 ## What this is not
 
-**It is not a swap between Alice and Bob**, even though Bob ends up with
-XBT and less BTC. There is no negotiated trade, no acceptance, no pair of
-invoices. There is one payment that changes denomination in transit.
+**It is not a swap between Alice and Bob**, although Bob ends up with XBT
+and less BTC. There is no negotiated trade between equals and no pair of
+traders each holding a secret. There is one payment that changes
+denomination on the way.
 
 **It is not trustless price discovery.** Alice takes Bob's quote or does
-not pay. Whether that quote is fair is a market question, and the market
-does not exist yet.
+not. Whether it is a fair price is a market question, and the market does
+not exist yet.
 
-**It is not a new atomicity mechanism.** Everything that makes it safe
-was already in Lightning. What is new is one node being willing to hold
-two kinds of money and quote between them.
+**It is not a new atomicity mechanism.** Everything that makes it safe was
+already in Lightning. What is new is one node willing to hold two kinds
+of money and quote between them.
 
 ---
 
@@ -186,28 +214,27 @@ chain rather than an asset issued on one, and that the bridging node is
 the explicit subject rather than an implementation detail.
 
 Submarine swaps solve an adjacent problem — moving between on-chain and
-off-chain — with the same hash-lock trick and the same asymmetry about
-who learns the secret first.
+off-chain — with the same hash lock and the same question about who
+learns the secret first.
 
-Neither of those makes this novel. It is worth knowing they exist, and
-worth knowing why this is not simply either of them.
+Neither makes this novel. It is worth knowing they exist, and worth
+knowing why this is not simply either of them.
 
 ---
 
 ## Open questions
 
-1. **Does Alice's pathfinding cope?** She must construct a route whose
-   first hop is denominated differently from the destination amount. The
-   onion has to carry enough for Bob to do the conversion, and Alice has
-   to be able to reason about a path whose hops are not commensurable.
-   This is the piece most likely to be harder than it looks.
+1. **Reusing the existing harness will get the invoices wrong.**
+   `swap_on_signets` uses **two hold invoices**, which is correct for the
+   bilateral swap it tests — two traders, each controlling their own
+   settlement. Here the destination's leg must be an **ordinary** invoice,
+   or Clair gains an option she should not have and the demo quietly
+   tests a different protocol.
 
-2. **What happens to the quote when the payment is slow?** Bob honours
-   a rate for the life of the HTLC, which may be minutes. That is an
-   option written by Bob, priced into the spread — the same free-option
-   problem as the bilateral swap, moved to where someone is being paid
-   to bear it.
+2. **Quoting needs a route before it can price.** Bob must find his path
+   to the destination at quotation time, which is the first thing here
+   that is real work rather than message passing.
 
-3. **Multiple bridging nodes.** One Bob is a demo. Several Bobs quoting
-   different rates is a market, and needs discovery, comparison and
-   failure handling that none of this describes.
+3. **One Bob is a demo.** Several makers quoting different prices is a
+   market, and needs discovery, comparison and failure handling that none
+   of this describes.

@@ -8,9 +8,9 @@ route, where only the middle node knows it happened.
   holds XBT                   bridges both                    wants BTC
 ```
 
-Clair writes an ordinary BTC invoice. Alice pays it with XBT. Bob sits in
-the middle holding channels on both chains and converts mid-route. One
-payment hash, one secret, ordinary Lightning atomicity.
+Clair writes an ordinary BTC invoice. Alice pays Bob in XBT against the
+same payment hash; Bob pays Clair. Two ordinary Lightning payments
+sharing one hash, and Alice's money can only move if Clair was paid.
 
 **Clair runs stock software and never learns that XBT was involved.**
 
@@ -24,17 +24,15 @@ be built to make it work.
 
 Specification and demonstration. Nothing here is a product.
 
-The atomicity is free — it is the same hash-lock every multi-hop
-Lightning payment already uses. The work is in three other places:
+The atomicity is free, and **nothing forwards across a denomination
+boundary** — both legs are ordinary payments within their own chain, so
+no node's forwarding logic changes. The work is:
 
 | | Where |
 |---|---|
-| Forwarding across a denomination boundary | `dln-node` — the hard part |
-| Quoting a rate before the payment is built | this repo, and a NIP |
-| Pathfinding over a cross-asset hop | Alice's side, largely unexplored |
-
-Of those, Nostr carries one, and it is the smallest. A specification that
-presents this as a messaging protocol has described the wrong half.
+| Three messages — offer, RFQ, quotation | `NIP-XZ`, and a client |
+| Issuing a hold invoice and settling it on an observed preimage | `dln-node` |
+| Quoting: route to the destination, price it, set the final CLTV | Bob's side — the only interesting logic |
 
 ## Related
 
