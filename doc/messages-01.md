@@ -99,7 +99,7 @@ against.
 Hold invoices are **NWC-03**, an adopted extension. They belong in the
 crate.
 
-### 2. There is no way to ask what a route will cost
+### 2. There is no way to ask what a route will cost — now drafted
 
 Step 6 has no method behind it. Bob must price the route to Alice's BTC
 node *before* issuing his quote — that is the whole reason a quotation
@@ -110,9 +110,19 @@ consume".
 `get_network_channel` is a graph lookup, not a route computation.
 
 Without it Bob can only guess, or attempt the payment to find out — and
-attempting it is precisely what he must not do before being paid. **This
-is the gap that blocks a correct quotation**, and it is the one piece of
-scenario 01 that has no implementation behind it today.
+attempting it is precisely what he must not do before being paid.
+
+**Drafted as `quote_payment` in `nips/nwc-route.md`.** It belongs in NWC:
+a client about to spend should be able to say what it will cost. And it
+adds nothing to Lightning — every implementation already computes this
+locally from gossip, so the method only exposes something the wallet
+already does.
+
+**It does not block scenario 01.** Bob has a *direct channel* to Alice's
+BTC node, so the route is one hop and its cost is his own channel policy,
+known without asking. The gap bites in
+[scenario 02](scenario-02.md), where the destination is out in the
+network.
 
 ### 3. Alice's node holds `S`, and Alice never sees it
 
