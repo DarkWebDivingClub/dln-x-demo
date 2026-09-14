@@ -16,9 +16,14 @@ sharing one hash, and Alice's money can only move if Clair was paid.
 
 ## Read this first
 
-[`doc/scenario.md`](doc/scenario.md) — the scenario in full: the flow,
-why it is atomic, why it is better than a bilateral swap, and what has to
-be built to make it work.
+| | |
+|---|---|
+| [`doc/scenario-01.md`](doc/scenario-01.md) | **Alice buys BTC from Bob.** No third party — Alice is her own destination. The simplest thing that exercises every mechanism, and what to build first |
+| [`doc/scenario-02.md`](doc/scenario-02.md) | **Alice pays Clair.** The same trade with a real destination, who implements nothing and never learns a second asset was involved |
+
+The mechanics are identical. What changes between them is whose node
+issues the ordinary invoice — and that is the difference between a swap
+and a payment.
 
 ## Status
 

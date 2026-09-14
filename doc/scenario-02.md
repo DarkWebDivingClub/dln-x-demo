@@ -1,4 +1,9 @@
-# The scenario: paying across chains without anyone noticing
+# Scenario 02: paying a third party across chains
+
+Builds on [scenario 01](scenario-01.md), which is the same trade with
+Alice as her own destination. Everything mechanical is identical; what
+changes is **who issues the ordinary invoice**, and that change is the
+whole point.
 
 Alice holds XBT. Clair wants BTC. They have never met, share no channel,
 and Clair runs nothing unusual.
@@ -230,6 +235,24 @@ Neither makes this novel. It is worth knowing they exist, and worth
 knowing why this is not simply either of them.
 
 ---
+
+## What scenario 01 could not show
+
+In [scenario 01](scenario-01.md) Alice is her own destination, so she
+generates `S` and her own node settles automatically. That works, and it
+proves every mechanism — but it cannot prove the property this design
+exists for.
+
+Here the secret belongs to **Clair, who is not a party to the trade.**
+Neither trader holds it. Alice cannot stall, because she has no `S`; Bob
+cannot stall, because he has none either and is paid only by producing
+it. In scenario 01 the option was removed by Alice's node being incapable
+of hesitating. Here there is no option to remove: it sits with someone
+who has no interest in the price and every reason to settle.
+
+And Clair implements nothing. That is the claim scenario 01 cannot make,
+and it is the one that matters — a protocol needing both ends to adopt it
+needs a network before it is useful.
 
 ## Open questions
 
