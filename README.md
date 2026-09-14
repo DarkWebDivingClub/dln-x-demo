@@ -20,6 +20,7 @@ sharing one hash, and Alice's money can only move if Clair was paid.
 |---|---|
 | [`doc/scenario-01.md`](doc/scenario-01.md) | **Alice buys BTC from Bob.** No third party — Alice is her own destination. The simplest thing that exercises every mechanism, and what to build first |
 | [`doc/scenario-02.md`](doc/scenario-02.md) | **Alice pays Clair.** The same trade with a real destination, who implements nothing and never learns a second asset was involved |
+| [`doc/messages-01.md`](doc/messages-01.md) | Every message scenario 01 sends, on both planes — the trade over NIP-XZ and each party driving their own nodes over NWC/NNC. Three trade messages, eleven control exchanges, and the gaps found |
 
 The mechanics are identical. What changes between them is whose node
 issues the ordinary invoice — and that is the difference between a swap
