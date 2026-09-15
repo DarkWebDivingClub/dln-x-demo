@@ -114,6 +114,10 @@ pub fn offer_event(d: &str, pair: &str, offer: &Offer) -> Result<EventBuilder, s
 ///
 /// Holds a relay connection and a key, and nothing about any trade —
 /// see the module note on why there is no session.
+/// How often a wait re-asks the relay. Short enough that a party is not
+/// the slow part of a demo, long enough not to hammer.
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
+
 pub struct TradePlane {
     keys: Keys,
     client: Client,
@@ -143,6 +147,17 @@ impl TradePlane {
     /// Find an offer for a pair, by whoever publishes one.
     ///
     /// A taker filters on the `o` tag, which is what it is for.
+    ///
+    /// **`within` is a wait, not a fetch timeout.** A relay answers a
+    /// query for stored events immediately, so a single fetch reports
+    /// only what was published before the taker asked — which on a fresh
+    /// relay is nothing, however long the timeout. A taker arriving
+    /// before the maker must keep asking, so this polls until the
+    /// deadline.
+    ///
+    /// Returns the first offer that parses. A real taker would collect
+    /// the window and take the best price; this one has a single
+    /// counterparty and takes what it finds.
     pub async fn find_offer(
         &self,
         pair: &str,
@@ -151,26 +166,33 @@ impl TradePlane {
         let filter = Filter::new()
             .kind(Kind::Custom(OFFER_KIND))
             .custom_tag(SingleLetterTag::lowercase(Alphabet::O), pair.to_string());
-        let events = self
-            .client
-            .fetch_events(filter)
-            .timeout(within)
-            .await
-            .map_err(|e| Error::Relay(e.to_string()))?;
-        for event in events.iter() {
-            let Ok(offer) = serde_json::from_str::<Offer>(&event.content) else { continue };
-            let d = event
-                .tags
-                .iter()
-                .find_map(|t| {
-                    let s = t.as_slice();
-                    (s.first().map(String::as_str) == Some("d")).then(|| s.get(1).cloned())
-                })
-                .flatten()
-                .unwrap_or_default();
-            return Ok(Some((event.pubkey, d, offer)));
+
+        let deadline = tokio::time::Instant::now() + within;
+        loop {
+            let events = self
+                .client
+                .fetch_events(filter.clone())
+                .timeout(POLL_INTERVAL)
+                .await
+                .map_err(|e| Error::Relay(e.to_string()))?;
+            for event in events.iter() {
+                let Ok(offer) = serde_json::from_str::<Offer>(&event.content) else { continue };
+                let d = event
+                    .tags
+                    .iter()
+                    .find_map(|t| {
+                        let s = t.as_slice();
+                        (s.first().map(String::as_str) == Some("d")).then(|| s.get(1).cloned())
+                    })
+                    .flatten()
+                    .unwrap_or_default();
+                return Ok(Some((event.pubkey, d, offer)));
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Ok(None);
+            }
+            tokio::time::sleep(POLL_INTERVAL).await;
         }
-        Ok(None)
     }
 
     /// Send a trade message, naming the offer and what it answers.
@@ -211,6 +233,12 @@ impl TradePlane {
     ///
     /// Returns the sender, the event id — which a reply must answer — and
     /// the decrypted payload.
+    ///
+    /// **It returns the first message that decrypts, whoever sent it and
+    /// whatever it answers.** With one counterparty and one trade in
+    /// flight that is unambiguous. A party running several trades must
+    /// match on the `e` tag instead, and this signature does not report
+    /// it — a gap to record against `XZ.md` rather than paper over here.
     pub async fn recv(&self, within: Duration) -> Result<Option<(PublicKey, EventId, Trade)>, Error> {
         let me = self.keys.public_key();
         let since = Timestamp::now();

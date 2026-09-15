@@ -30,6 +30,10 @@ const QUOTE_VALID_SECS: u64 = 120;
 /// checking it.
 const CLTV_MARGIN: u32 = 40;
 
+/// Below this a routing fee is most of the trade. Bob's floor, not the
+/// protocol's.
+const MIN_TRADE_MSAT: u64 = 1_000;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     party::init_tracing();
@@ -48,9 +52,19 @@ async fn main() -> Result<()> {
 
     // ── 1. Publish the offer ─────────────────────────────────────────
     //
-    // `volume` is his outbound BTC and nothing else bounds it.
+    // `volume` is his **Lightning** balance, not his total: the on-chain
+    // part of a node's balance cannot pay an invoice, and offering it
+    // would advertise capital he cannot deliver over this trade.
+    //
+    // It is still an upper bound rather than a promise — local balance is
+    // not per-destination capacity, and a route to a particular payee may
+    // be narrower. `quote_payment` is where a specific request meets a
+    // specific route; this number only says what is worth asking about.
     let balance = btc.get_balance().await.context("bob: get_balance on BTC")?;
-    let offer = Offer { price: cfg.price_ppm, volume: balance.balance, min: 1_000 };
+    let volume = balance
+        .lightning_balance
+        .context("bob: his BTC node did not report a lightning balance")?;
+    let offer = Offer { price: cfg.price_ppm, volume, min: MIN_TRADE_MSAT };
     let d = "bob-btc-xbt";
     plane.publish_offer(d, "btc:xbt", &offer).await?;
     info!("offer published: {} ppm, {} msat available", offer.price, offer.volume);
