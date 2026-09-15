@@ -84,3 +84,16 @@ pub fn invoice_payment_hash(invoice: &str) -> Result<String> {
         .map_err(|e| anyhow::anyhow!("not a bolt11 invoice: {e:?}"))?;
     Ok(inv.payment_hash().to_string())
 }
+
+/// The final CLTV delta a BOLT11 demands of its last hop.
+///
+/// A maker sizing his own timelock needs it. `quote_payment` reports what
+/// the **route** consumes and excludes this by definition, so the two are
+/// added, never one used for both.
+pub fn invoice_final_cltv(invoice: &str) -> Result<u64> {
+    use lightning_invoice::Bolt11Invoice;
+    use std::str::FromStr;
+    let inv = Bolt11Invoice::from_str(invoice)
+        .map_err(|e| anyhow::anyhow!("not a bolt11 invoice: {e:?}"))?;
+    Ok(inv.min_final_cltv_expiry_delta())
+}

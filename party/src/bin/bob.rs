@@ -25,9 +25,9 @@ use xz::{offer_address, Offer, Quote, Trade, TradePlane};
 /// How long Bob will honour a quote. His own price risk, and short.
 const QUOTE_VALID_SECS: u64 = 120;
 
-/// Blocks of margin above what the route costs, so his claim outlives his
-/// obligation. Scenario 01's timelock rule: he **sets** this rather than
-/// checking it.
+/// Blocks of margin above what his obligation costs, so his claim
+/// outlives it with room for a block or two of disagreement. Scenario
+/// 01's timelock rule: he **sets** this rather than checking it.
 const CLTV_MARGIN: u32 = 40;
 
 /// Below this a routing fee is most of the trade. Bob's floor, not the
@@ -122,6 +122,19 @@ async fn main() -> Result<()> {
     // final CLTV is above what the route will consume — so his claim on
     // Alice outlives his obligation to the destination.
     let counter_amount = offer.counter_amount(destination_amount);
+
+    // What his obligation will cost him in blocks: the route, plus the
+    // final hop the destination invoice demands. `quote_payment` reports
+    // the first and **excludes the second by definition** — adding only
+    // the route would leave his claim on Alice expiring while his payment
+    // to the destination was still in flight, which is the one ordering
+    // that loses him the trade.
+    let final_cltv: u32 = party::invoice_final_cltv(&rfq.destination_invoice)?
+        .try_into()
+        .context("bob: the destination invoice demands an absurd final CLTV")?;
+    let obligation = quote.cltv_expiry_delta + final_cltv;
+    info!("obligation is {obligation} blocks ({} route + {final_cltv} final)", quote.cltv_expiry_delta);
+
     let hold = xbt
         .make_hold_invoice(MakeHoldInvoiceRequest {
             amount: counter_amount,
@@ -129,16 +142,23 @@ async fn main() -> Result<()> {
             description: Some("xbt for btc".into()),
             description_hash: None,
             expiry: Some(QUOTE_VALID_SECS),
-            min_cltv_expiry_delta: Some(quote.cltv_expiry_delta + CLTV_MARGIN),
+            min_cltv_expiry_delta: Some(obligation + CLTV_MARGIN),
         })
         .await
         .context("bob: make_hold_invoice")?;
     let counter_invoice = hold.invoice.context("bob: hold invoice has no bolt11")?;
 
-    // Subscribe *before* quoting. The stream is a broadcast, so a
-    // notification that beats the receiver is lost — and this one is the
-    // gate Bob must not pay before.
-    let mut notifications = xbt.notifications().await.context("bob: notifications")?;
+    // Subscribe *before* quoting, and for this type only. The stream is
+    // a broadcast, so a notification that beats the receiver is lost —
+    // and this one is the gate Bob must not pay before.
+    //
+    // Subscribing is a published event, not just a relay filter: his node
+    // delivers to the intersection of a grant and a subscription, so
+    // asking is half of being told.
+    let mut notifications = xbt
+        .notifications(&[WalletNotificationType::HoldInvoiceAccepted])
+        .await
+        .context("bob: notifications")?;
 
     let addr = offer_address(&plane.public_key(), d);
     plane
