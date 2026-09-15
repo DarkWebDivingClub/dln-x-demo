@@ -1,0 +1,26 @@
+[package]
+name = "party"
+description = "Alice and Bob: two processes that meet on a relay."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+xz = { path = "../xz" }
+nostr-ln.workspace = true
+nostr.workspace = true
+nostr-sdk.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[[bin]]
+name = "alice"
+path = "src/bin/alice.rs"
+
+[[bin]]
+name = "bob"
+path = "src/bin/bob.rs"
