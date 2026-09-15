@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["xz", "party"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+
+[workspace.dependencies]
+nostr-ln = { git = "https://github.com/DarkWebDivingClub/nostr-rs-ln.git", branch = "master", features = ["client", "transport"] }
+nostr = { git = "https://github.com/dukeh3/nostr.git", rev = "9ac9adc2", features = ["std", "nip44", "nip47", "os-rng"] }
+nostr-sdk = { git = "https://github.com/dukeh3/nostr.git", rev = "9ac9adc2" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
